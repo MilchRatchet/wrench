@@ -1,6 +1,12 @@
 
 #include "stream.h"
 
+#if defined(_WIN32) || defined(WIN32)
+	#include <Windows.h>
+	#include <fileapi.h>
+	#include <io.h>
+#endif
+
 Stream::~Stream() {}
 
 void Stream::copy(OutputStream& dest, InputStream& src, s64 size) {
@@ -16,7 +22,7 @@ void Stream::copy(OutputStream& dest, InputStream& src, s64 size) {
 }
 
 // *****************************************************************************
-	
+
 void OutputStream::pad(s64 alignment, u8 padding) {
 	s64 pos = tell();
 	if(pos % alignment != 0) {
@@ -132,10 +138,29 @@ s64 FileInputStream::tell() const {
 }
 
 s64 FileInputStream::size() const {
+	s64 size_val;
+
+	// SEEK_END is not required to be implemented in a meaningful away according to
+	// the C90 standard. On Windows, some compilers like GCC do not implement SEEK_END
+	// and hence we need a different approach here.
+#if defined(_WIN32) || defined(WIN32)
+	int fd = _fileno(file);
+	HANDLE hfile = (HANDLE) _get_osfhandle(fd);
+	FlushFileBuffers(hfile);
+
+	LARGE_INTEGER size;
+	bool success = GetFileSizeEx(hfile, &size);
+	DWORD err = GetLastError();
+
+	verify(success, "Failed to retrieve file size. WinAPI Error Code: '%d'.", err);
+
+	size_val = (s64) size.QuadPart;
+#else
 	s64 offset = ftell(file);
 	fseek(file, 0, SEEK_END);
-	f64 size_val = ftell(file);
+	size_val = ftell(file);
 	fseek(file, offset, SEEK_SET);
+#endif
 	return size_val;
 }
 
@@ -170,10 +195,29 @@ s64 FileOutputStream::tell() const {
 }
 
 s64 FileOutputStream::size() const {
+	s64 size_val;
+
+	// SEEK_END is not required to be implemented in a meaningful away according to
+	// the C90 standard. On Windows, some compilers like GCC do not implement SEEK_END
+	// and hence we need a different approach here.
+#if defined(_WIN32) || defined(WIN32)
+	int fd = _fileno(file);
+	HANDLE hfile = (HANDLE) _get_osfhandle(fd);
+	FlushFileBuffers(hfile);
+
+	LARGE_INTEGER size;
+	bool success = GetFileSizeEx(hfile, &size);
+	DWORD err = GetLastError();
+
+	verify(success, "Failed to retrieve file size. WinAPI Error Code: '%d'.", err);
+
+	size_val = (s64) size.QuadPart;
+#else
 	s64 offset = ftell(file);
 	fseek(file, 0, SEEK_END);
-	f64 size_val = ftell(file);
+	size_val = ftell(file);
 	fseek(file, offset, SEEK_SET);
+#endif
 	return size_val;
 }
 
@@ -192,7 +236,7 @@ SubInputStream::SubInputStream(InputStream& stream_, s64 base_, s64 bytes_)
 	, range{base_, bytes_} {
 	verify(range.offset + range.size <= stream.size(), "Tried to create out of range substream.");
 }
-	
+
 bool SubInputStream::seek(s64 offset) {
 	return stream.seek(range.offset + offset);
 }
